@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spam Message Detector</title>
+    <style>
+        :root {
+            --primary: #8b5cf6;
+            --primary-dark: #7c3aed;
+            --secondary: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --border: #334155;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--secondary), #1e1b4b);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            border: 1px solid var(--border);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+        }
+        
+        .logo {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+        
+        h2 {
+            margin-bottom: 20px;
+            font-weight: 600;
+            font-size: 28px;
+            background: linear-gradient(to right, var(--primary), #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .input-container {
+            position: relative;
+            margin-bottom: 25px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border-radius: 12px;
+            border: 2px solid var(--border);
+            background: rgba(30, 41, 59, 0.7);
+            color: var(--text);
+            font-size: 16px;
+            resize: none;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+        }
+        
+        .char-count {
+            position: absolute;
+            bottom: 10px;
+            right: 15px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        button {
+            margin-top: 10px;
+            padding: 14px 30px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(to right, var(--primary), var(--primary-dark));
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .result {
+            margin-top: 25px;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            opacity: 0;
+            transform: translateY(10px);
+            min-height: 60px;
+        }
+        
+        .result.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .spam {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .ham {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .info {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 5px;
+        }
+        
+        .spam-stat {
+            color: var(--danger);
+        }
+        
+        .ham-stat {
+            color: var(--success);
+        }
+        
+        .total-stat {
+            color: var(--primary);
+        }
+        
+        @media (max-width: 600px) {
+            .card {
+                padding: 25px;
+            }
+            
+            h2 {
+                font-size: 24px;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="logo">🛡️</div>
+    <h2>Spam Message Detection</h2>
+    <p class="subtitle">Enter a message below to check if it's spam or safe</p>
+    
+    <div class="input-container">
+        <textarea id="message" placeholder="Type or paste your message here..."></textarea>
+        <div class="char-count"><span id="char-count">0</span>/500</div>
+    </div>
+    
+    <button onclick="checkSpam()">
+        <span>Check Message</span>
+    </button>
+    
+    <div class="result" id="result"></div>
+    
+    <div class="stats">
+        <div class="stat-item">
+            <span>Spam Detected</span>
+            <div class="stat-value spam-stat" id="spam-count">0</div>
+        </div>
+        <div class="stat-item">
+            <span>Safe Messages</span>
+            <div class="stat-value ham-stat" id="ham-count">0</div>
+        </div>
+        <div class="stat-item">
+            <span>Total Checks</span>
+            <div class="stat-value total-stat" id="total-count">0</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Initialize stats from localStorage or set to 0
+    let spamCount = parseInt(localStorage.getItem('spamCount')) || 0;
+    let hamCount = parseInt(localStorage.getItem('hamCount')) || 0;
+    let totalCount = parseInt(localStorage.getItem('totalCount')) || 0;
+    
+    // Update stats display
+    document.getElementById('spam-count').textContent = spamCount;
+    document.getElementById('ham-count').textContent = hamCount;
+    document.getElementById('total-count').textContent = totalCount;
+    
+    // Character counter
+    const messageInput = document.getElementById('message');
+    const charCount = document.getElementById('char-count');
+    
+    messageInput.addEventListener('input', function() {
+        const count = this.value.length;
+        charCount.textContent = count;
+        
+        if (count > 500) {
+            charCount.style.color = '#ef4444';
+        } else {
+            charCount.style.color = '#cbd5e1';
+        }
+    });
+    
+    async function checkSpam() {
+        const message = document.getElementById("message").value;
+        const resultDiv = document.getElementById("result");
+        
+        // Reset result display
+        resultDiv.className = "result";
+        resultDiv.classList.remove("show");
+        
+        if (message.trim() === "") {
+            setTimeout(() => {
+                resultDiv.innerHTML = "⚠️ Please enter a message!";
+                resultDiv.className = "result info show";
+            }, 10);
+            return;
+        }
+        
+        if (message.length > 500) {
+            setTimeout(() => {
+                resultDiv.innerHTML = "⚠️ Message is too long! Please limit to 500 characters.";
+                resultDiv.className = "result info show";
+            }, 10);
+            return;
+        }
+        
+        // Show loading state
+        resultDiv.innerHTML = '<div class="loading"></div> Analyzing message...';
+        resultDiv.className = "result info show";
+        
+        try {
+            const response = await fetch("http://127.0.0.1:5000/predict", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ message: message })
+            });
+
+            const data = await response.json();
+            
+            // Update stats
+            totalCount++;
+            localStorage.setItem('totalCount', totalCount);
+            document.getElementById('total-count').textContent = totalCount;
+            
+            if (data.prediction === "Spam") {
+                spamCount++;
+                localStorage.setItem('spamCount', spamCount);
+                document.getElementById('spam-count').textContent = spamCount;
+                
+                resultDiv.innerHTML = "🚨 Spam Message Detected!";
+                resultDiv.className = "result spam show";
+            } else {
+                hamCount++;
+                localStorage.setItem('hamCount', hamCount);
+                document.getElementById('ham-count').textContent = hamCount;
+                
+                resultDiv.innerHTML = "✅ This is a Safe Message (Ham)";
+                resultDiv.className = "result ham show";
+            }
+
+        } catch (error) {
+            resultDiv.innerHTML = "❌ Error connecting to server!";
+            resultDiv.className = "result error show";
+        }
+    }
+    
+    // Allow Enter key to trigger the check (with Shift+Enter for new line)
+    messageInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            checkSpam();
+        }
+    });
+</script>
+
+</body>
+</html>
