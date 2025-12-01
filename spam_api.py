@@ -1,10 +1,7 @@
-# spam_api.py
-
 from flask import Flask, request, jsonify
 import joblib
 import os
 from flask_cors import CORS
-
 
 MODEL_PATH = "spam_detector_model.joblib"
 
@@ -26,7 +23,7 @@ model = load_model()
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({"status": "ok", "spam": "Spam detection API is running"})
+    return jsonify({"status": "ok", "message": "Spam detection API is running"})
 
 
 @app.route("/predict", methods=["POST"])
@@ -45,23 +42,27 @@ def predict():
         if not isinstance(message, str) or message.strip() == "":
             return jsonify({"error": "Message must be a non-empty string"}), 400
 
-        pred = model.predict([message])[0]
-        prob = model.predict_proba([message])[0]
+        # ✅ USE PROBABILITY instead of direct predict
+        probs = model.predict_proba([message])[0]
+        ham_prob = float(probs[0])
+        spam_prob = float(probs[1])
 
-        label = "Spam" if pred == 1 else "Ham"
+        # ✅ LOWER threshold to catch more spam
+        threshold = 0.4   # try 0.35–0.45 if needed
+        label = "Spam" if spam_prob >= threshold else "Ham"
 
         return jsonify({
             "input_message": message,
             "prediction": label,
             "probabilities": {
-                "ham": float(prob[0]),
-                "spam": float(prob[1])
+                "ham": ham_prob,
+                "spam": spam_prob
             }
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
-    # For dev: do NOT use this in production directly
     app.run(host="0.0.0.0", port=5000, debug=True)

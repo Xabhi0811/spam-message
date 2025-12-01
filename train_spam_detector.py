@@ -1,9 +1,6 @@
-# train_spam_detector.py
-
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import (
     confusion_matrix,
     classification_report,
@@ -13,65 +10,101 @@ from sklearn.metrics import (
     f1_score,
 )
 from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
 import joblib
 import os
 
+
+# ✅ LOAD DATA SAFELY (handles extra commas properly)
 def load_data(csv_path: str) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
+    # ✅ Read only first 2 columns, FORCE correct structure
+    df = pd.read_csv(
+        csv_path,
+        sep=",",
+        usecols=[0, 1],
+        names=["label", "message"],
+        header=None,          # ✅ THIS IS THE CRITICAL FIX
+        engine="python"
+    )
 
-    # ✅ Correct column validation for YOUR dataset
-    if "Category" not in df.columns or "Message" not in df.columns:
-        raise ValueError("CSV must contain 'Category' and 'Message' columns.")
+    # ✅ Drop broken rows
+    df = df.dropna(subset=["label", "message"])
 
-    # ✅ Clean missing values
-    df = df.dropna(subset=["Category", "Message"])
+    # ✅ Clean spaces and quotes
+    df["label"] = df["label"].astype(str).str.strip().str.lower()
+    df["message"] = df["message"].astype(str).str.strip()
+
+    print("[INFO] CSV columns detected:", df.columns.tolist())
+    print("[INFO] First 5 labels:", df["label"].head().tolist())
+
     return df
 
 
 
+# ✅ CLEAN & MAP LABELS SAFELY (works with ham/spam, 0/1, etc.)
 def preprocess_labels(df: pd.DataFrame):
-    df["label_num"] = df["Category"].map({"ham": 0, "spam": 1})
+    df["label_clean"] = df["label"].astype(str).str.strip().str.lower()
 
-    if df["label_num"].isna().any():
-        raise ValueError("Category column must contain only 'ham' or 'spam' values.")
+    label_map = {
+        "ham": 0,
+        "not spam": 0,
+        "normal": 0,
+        "0": 0,
+        0: 0,
+        "spam": 1,
+        "1": 1,
+        1: 1
+    }
 
-    X = df["Message"].values
-    y = df["label_num"].values
+    df["label_num"] = df["label_clean"].map(label_map)
+
+    before = len(df)
+    df = df.dropna(subset=["label_num"])
+    after = len(df)
+
+    print(f"[INFO] Dropped {before - after} rows with invalid labels")
+
+    X = df["message"].astype(str).values
+    y = df["label_num"].astype(int).values
     return X, y
 
 
-
+# ✅ STRONG ML PIPELINE (TF-IDF + Logistic Regression)
 def build_pipeline() -> Pipeline:
-    """
-    Create a sklearn Pipeline: TF-IDF Vectorizer + Naive Bayes classifier.
-    """
     pipeline = Pipeline(
         steps=[
             (
                 "tfidf",
                 TfidfVectorizer(
                     lowercase=True,
-                    stop_words="english",  # remove common English words
-                    ngram_range=(1, 2),   # unigrams + bigrams
-                    max_df=0.95,          # ignore very frequent words
-                    min_df=2,             # ignore rare words
+                    stop_words="english",
+                    ngram_range=(1, 2),
+                    max_df=0.98,
+                    min_df=1,
+                    sublinear_tf=True
                 ),
             ),
-            ("clf", MultinomialNB()),
+            (
+                "clf",
+                LogisticRegression(
+                    class_weight="balanced",
+                    max_iter=200,
+                    solver="liblinear"
+                ),
+            ),
         ]
     )
     return pipeline
 
 
+# ✅ EVALUATION METRICS
 def evaluate_model(y_true, y_pred):
-    """
-    Print evaluation metrics.
-    """
     print("=== Evaluation Metrics ===")
     print(f"Accuracy : {accuracy_score(y_true, y_pred):.4f}")
     print(f"Precision: {precision_score(y_true, y_pred):.4f}")
     print(f"Recall   : {recall_score(y_true, y_pred):.4f}")
     print(f"F1-score : {f1_score(y_true, y_pred):.4f}")
+
     print("\nClassification Report:")
     print(classification_report(y_true, y_pred, target_names=["Ham", "Spam"]))
 
@@ -79,56 +112,54 @@ def evaluate_model(y_true, y_pred):
     print(confusion_matrix(y_true, y_pred))
 
 
+# ✅ MAIN TRAINING PIPELINE
 def main():
-    # 1. Set your dataset path here
-    csv_path = "spam_dataset.csv"  # <- change this to your actual file
+    csv_path = "spam_dataset.csv"
 
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(
-            f"Dataset file not found at {csv_path}. Please check the path."
-        )
+        raise FileNotFoundError(f"Dataset file not found at {csv_path}")
 
     print("[INFO] Loading data...")
     df = load_data(csv_path)
+
     X, y = preprocess_labels(df)
+    print(f"[INFO] Total samples after cleaning: {len(X)}")
 
+    # ✅ Safety check
+    if len(X) < 100:
+        raise ValueError("❌ Dataset too small after cleaning. CSV format still broken.")
 
-    print(f"[INFO] Total samples: {len(X)}")
-
-    # 2. Train / validation / test split
-    # First: train+val vs test
+    # ✅ TRAIN / VAL / TEST SPLIT
     X_temp, X_test, y_temp, y_test = train_test_split(
         X, y, test_size=0.15, random_state=42, stratify=y
     )
-    # Second: train vs val
+
     X_train, X_val, y_train, y_val = train_test_split(
         X_temp, y_temp, test_size=0.1765, random_state=42, stratify=y_temp
     )
-    # 0.85 * 0.1765 ≈ 0.15 → so overall: 70% train, 15% val, 15% test
 
     print(f"[INFO] Train size: {len(X_train)}")
     print(f"[INFO] Val size  : {len(X_val)}")
     print(f"[INFO] Test size : {len(X_test)}")
 
-    # 3. Build model pipeline
+    # ✅ BUILD + TRAIN MODEL
     print("[INFO] Building model pipeline...")
     model = build_pipeline()
 
-    # 4. Train model
     print("[INFO] Training model...")
     model.fit(X_train, y_train)
 
-    # 5. Validation evaluation
+    # ✅ VALIDATION
     print("\n[INFO] Evaluating on validation set...")
     y_val_pred = model.predict(X_val)
     evaluate_model(y_val, y_val_pred)
 
-    # 6. Final evaluation on test set
+    # ✅ TEST
     print("\n[INFO] Evaluating on test set...")
     y_test_pred = model.predict(X_test)
     evaluate_model(y_test, y_test_pred)
 
-    # 7. Save trained model (pipeline contains both TF-IDF + classifier)
+    # ✅ SAVE MODEL
     model_path = "spam_detector_model.joblib"
     joblib.dump(model, model_path)
     print(f"\n[SUCCESS] Model saved to {model_path}")
