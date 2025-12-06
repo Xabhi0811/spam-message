@@ -1,48 +1,32 @@
-# predict_spam.py
-
 import joblib
-import os
-
+import numpy as np
+import re
 
 MODEL_PATH = "spam_detector_model.joblib"
 
+def clean_text(t):
+    t = t.lower()
+    t = re.sub(r"http\S+|www\S+", " url ", t)
+    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(
-            f"Model file '{MODEL_PATH}' not found. "
-            "Train the model first by running: python train_spam_detector.py"
-        )
-    return joblib.load(MODEL_PATH)
+def w2v_embed(text, model, size=100):
+    tokens = clean_text(text).split()
+    vectors = [model.wv[word] for word in tokens if word in model.wv]
+    if len(vectors) == 0:
+        return np.zeros(size)
+    return np.mean(vectors, axis=0)
 
+def predict_spam(message):
+    tfidf, w2v_model, svm = joblib.load(MODEL_PATH)
 
-def predict_spam(spam: str):
-    model = load_model()
-    # model is a Pipeline: TF-IDF + classifier
-    pred = model.predict([spam])[0]
-    prob = model.predict_proba([spam])[0]
+    tfidf_vec = tfidf.transform([message]).toarray()[0]
+    w2v_vec = w2v_embed(message, w2v_model)
 
-    ham = "Spam" if pred == 1 else "Ham"
-    spam_prob = prob[1]
-    ham_prob = prob[0]
+    hybrid = np.concatenate([tfidf_vec, w2v_vec]).reshape(1, -1)
 
-    return ham, spam_prob, ham_prob
+    pred = svm.predict(hybrid)[0]
+    prob = svm.predict_proba(hybrid)[0]
 
-
-if __name__ == "__main__":
-    print("=== Spam Detection CLI ===")
-    print("Type a spam (or 'quit' to exit):")
-    model = load_model()
-
-    while True:
-        msg = input("\nspam: ")
-        if msg.lower().strip() in ["quit", "exit"]:
-            print("Goodbye!")
-            break
-
-        pred = model.predict([msg])[0]
-        prob = model.predict_proba([msg])[0]
-
-        ham = "Spam" if pred == 1 else "Ham"
-        print(f"Prediction: {ham}")
-        print(f"Probabilities -> Ham: {prob[0]:.4f}, Spam: {prob[1]:.4f}")
+    return ("Spam" if pred == 1 else "Ham"), prob[1], prob[0]

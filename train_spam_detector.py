@@ -1,49 +1,67 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import (
-    confusion_matrix,
-    classification_report,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-)
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
+import numpy as np
+import re
 import joblib
 import os
 
+from gensim.models import Word2Vec
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    confusion_matrix, classification_report,
+    accuracy_score, precision_score, recall_score, f1_score
+)
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# ✅ LOAD DATA SAFELY (handles extra commas properly)
+
+# -------------------------------
+# TEXT CLEANER
+# -------------------------------
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"http\S+|www\S+", " url ", text)
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+# -------------------------------
+# WORD2VEC EMBEDDING FUNCTION
+# -------------------------------
+def w2v_embed(text, model, size=100):
+    tokens = clean_text(text).split()
+    vectors = [model.wv[word] for word in tokens if word in model.wv]
+
+    if len(vectors) == 0:
+        return np.zeros(size)
+
+    return np.mean(vectors, axis=0)
+
+
+# -------------------------------
+# LOAD DATA
+# -------------------------------
 def load_data(csv_path: str) -> pd.DataFrame:
-    # ✅ Read only first 2 columns, FORCE correct structure
     df = pd.read_csv(
         csv_path,
         sep=",",
         usecols=[0, 1],
         names=["label", "message"],
-        header=None,          # ✅ THIS IS THE CRITICAL FIX
+        header=None,
         engine="python"
     )
 
-    # ✅ Drop broken rows
     df = df.dropna(subset=["label", "message"])
-
-    # ✅ Clean spaces and quotes
     df["label"] = df["label"].astype(str).str.strip().str.lower()
     df["message"] = df["message"].astype(str).str.strip()
-
-    print("[INFO] CSV columns detected:", df.columns.tolist())
-    print("[INFO] First 5 labels:", df["label"].head().tolist())
-
     return df
 
 
-
-# ✅ CLEAN & MAP LABELS SAFELY (works with ham/spam, 0/1, etc.)
+# -------------------------------
+# LABEL CLEANING
+# -------------------------------
 def preprocess_labels(df: pd.DataFrame):
-    df["label_clean"] = df["label"].astype(str).str.strip().str.lower()
+    df["label_clean"] = df["label"].str.lower()
 
     label_map = {
         "ham": 0,
@@ -57,47 +75,16 @@ def preprocess_labels(df: pd.DataFrame):
     }
 
     df["label_num"] = df["label_clean"].map(label_map)
-
-    before = len(df)
     df = df.dropna(subset=["label_num"])
-    after = len(df)
 
-    print(f"[INFO] Dropped {before - after} rows with invalid labels")
-
-    X = df["message"].astype(str).values
+    X = df["message"].values
     y = df["label_num"].astype(int).values
     return X, y
 
 
-# ✅ STRONG ML PIPELINE (TF-IDF + Logistic Regression)
-def build_pipeline() -> Pipeline:
-    pipeline = Pipeline(
-        steps=[
-            (
-                "tfidf",
-                TfidfVectorizer(
-                    lowercase=True,
-                    stop_words="english",
-                    ngram_range=(1, 2),
-                    max_df=0.98,
-                    min_df=1,
-                    sublinear_tf=True
-                ),
-            ),
-            (
-                "clf",
-                LogisticRegression(
-                    class_weight="balanced",
-                    max_iter=200,
-                    solver="liblinear"
-                ),
-            ),
-        ]
-    )
-    return pipeline
-
-
-# ✅ EVALUATION METRICS
+# -------------------------------
+# EVALUATION
+# -------------------------------
 def evaluate_model(y_true, y_pred):
     print("=== Evaluation Metrics ===")
     print(f"Accuracy : {accuracy_score(y_true, y_pred):.4f}")
@@ -108,61 +95,100 @@ def evaluate_model(y_true, y_pred):
     print("\nClassification Report:")
     print(classification_report(y_true, y_pred, target_names=["Ham", "Spam"]))
 
-    print("\nConfusion Matrix (rows = true, cols = predicted):")
+    print("\nConfusion Matrix:")
     print(confusion_matrix(y_true, y_pred))
 
 
-# ✅ MAIN TRAINING PIPELINE
+# -------------------------------
+# MAIN TRAINING PIPELINE
+# -------------------------------
 def main():
     csv_path = "spam_dataset.csv"
 
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Dataset file not found at {csv_path}")
+        raise FileNotFoundError(f"Dataset not found at {csv_path}")
 
     print("[INFO] Loading data...")
     df = load_data(csv_path)
-
     X, y = preprocess_labels(df)
-    print(f"[INFO] Total samples after cleaning: {len(X)}")
 
-    # ✅ Safety check
-    if len(X) < 100:
-        raise ValueError("❌ Dataset too small after cleaning. CSV format still broken.")
+    print(f"[INFO] Samples: {len(X)}")
 
-    # ✅ TRAIN / VAL / TEST SPLIT
-    X_temp, X_test, y_temp, y_test = train_test_split(
-        X, y, test_size=0.15, random_state=42, stratify=y
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp, test_size=0.1765, random_state=42, stratify=y_temp
+    # ---------------------------------------
+    # TRAIN TF-IDF
+    # ---------------------------------------
+    print("[INFO] Training TF-IDF vectorizer...")
+
+    tfidf = TfidfVectorizer(
+        lowercase=True,
+        stop_words="english",
+        ngram_range=(1, 2),
+        min_df=1,
+        max_df=0.98,
     )
 
-    print(f"[INFO] Train size: {len(X_train)}")
-    print(f"[INFO] Val size  : {len(X_val)}")
-    print(f"[INFO] Test size : {len(X_test)}")
+    tfidf.fit(X_train)
 
-    # ✅ BUILD + TRAIN MODEL
-    print("[INFO] Building model pipeline...")
-    model = build_pipeline()
+    # ---------------------------------------
+    # TRAIN WORD2VEC
+    # ---------------------------------------
+    print("[INFO] Training Word2Vec model...")
+    sentences = [clean_text(text).split() for text in X_train]
 
-    print("[INFO] Training model...")
-    model.fit(X_train, y_train)
+    w2v_model = Word2Vec(
+        sentences,
+        vector_size=100,
+        window=5,
+        min_count=1,
+        workers=4
+    )
 
-    # ✅ VALIDATION
-    print("\n[INFO] Evaluating on validation set...")
-    y_val_pred = model.predict(X_val)
-    evaluate_model(y_val, y_val_pred)
+    # ---------------------------------------
+    # CREATE HYBRID FEATURES
+    # ---------------------------------------
+    print("[INFO] Creating hybrid (TF-IDF + W2V) feature vectors...")
 
-    # ✅ TEST
-    print("\n[INFO] Evaluating on test set...")
-    y_test_pred = model.predict(X_test)
-    evaluate_model(y_test, y_test_pred)
+    X_train_vec = []
+    for msg in X_train:
+        tfidf_vec = tfidf.transform([msg]).toarray()[0]
+        w2v_vec = w2v_embed(msg, w2v_model)
+        hybrid = np.concatenate([tfidf_vec, w2v_vec])
+        X_train_vec.append(hybrid)
 
-    # ✅ SAVE MODEL
-    model_path = "spam_detector_model.joblib"
-    joblib.dump(model, model_path)
-    print(f"\n[SUCCESS] Model saved to {model_path}")
+    X_train_vec = np.array(X_train_vec)
+
+    X_test_vec = []
+    for msg in X_test:
+        tfidf_vec = tfidf.transform([msg]).toarray()[0]
+        w2v_vec = w2v_embed(msg, w2v_model)
+        hybrid = np.concatenate([tfidf_vec, w2v_vec])
+        X_test_vec.append(hybrid)
+
+    X_test_vec = np.array(X_test_vec)
+
+    # ---------------------------------------
+    # TRAIN SVM
+    # ---------------------------------------
+    print("[INFO] Training SVM classifier...")
+    svm = SVC(kernel="linear", probability=True, class_weight="balanced")
+    svm.fit(X_train_vec, y_train)
+
+    # ---------------------------------------
+    # EVALUATE
+    # ---------------------------------------
+    print("\n[INFO] Evaluating model...")
+    y_pred = svm.predict(X_test_vec)
+    evaluate_model(y_test, y_pred)
+
+    # ---------------------------------------
+    # SAVE MODEL
+    # ---------------------------------------
+    joblib.dump((tfidf, w2v_model, svm), "spam_detector_model.joblib")
+    print("[SUCCESS] Model saved to spam_detector_model.joblib")
 
 
 if __name__ == "__main__":

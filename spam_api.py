@@ -48,7 +48,7 @@ def predict():
         spam_prob = float(probs[1])
 
         # ✅ LOWER threshold to catch more spam
-        threshold = 0.4   # try 0.35–0.45 if needed
+        threshold = 0.3   # try 0.35–0.45 if needed
         label = "Spam" if spam_prob >= threshold else "Ham"
 
         return jsonify({
