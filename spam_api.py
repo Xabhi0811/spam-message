@@ -25,44 +25,27 @@ model = load_model()
 def health_check():
     return jsonify({"status": "ok", "message": "Spam detection API is running"})
 
-
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
         data = request.get_json()
 
-        if data is None:
-            return jsonify({"error": "No JSON received"}), 400
-
-        if "message" not in data:
+        if data is None or "message" not in data:
             return jsonify({"error": "Missing 'message' field"}), 400
 
-        message = data["message"]
+        message = data["message"].strip()
+        if message == "":
+            return jsonify({"error": "Message must be non-empty"}), 400
 
-        if not isinstance(message, str) or message.strip() == "":
-            return jsonify({"error": "Message must be a non-empty string"}), 400
-
-        # ✅ USE PROBABILITY instead of direct predict
-        probs = model.predict_proba([message])[0]
-        ham_prob = float(probs[0])
-        spam_prob = float(probs[1])
-
-        # ✅ LOWER threshold to catch more spam
-        threshold = 0.3   # try 0.35–0.45 if needed
-        label = "Spam" if spam_prob >= threshold else "Ham"
+        label = model.predict([message])[0]
 
         return jsonify({
-            "input_message": message,
-            "prediction": label,
-            "probabilities": {
-                "ham": ham_prob,
-                "spam": spam_prob
-            }
+            "message": message,
+            "prediction": label
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

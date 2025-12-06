@@ -7,26 +7,33 @@ MODEL_PATH = "spam_detector_model.joblib"
 def clean_text(t):
     t = t.lower()
     t = re.sub(r"http\S+|www\S+", " url ", t)
-    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    t = re.sub(r"[^a-z0-9\s₹!]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
 def w2v_embed(text, model, size=100):
     tokens = clean_text(text).split()
-    vectors = [model.wv[word] for word in tokens if word in model.wv]
-    if len(vectors) == 0:
-        return np.zeros(size)
-    return np.mean(vectors, axis=0)
+    vectors = [model.wv[t] for t in tokens if t in model.wv]
+    return np.mean(vectors, axis=0) if vectors else np.zeros(size)
 
-def predict_spam(message):
-    tfidf, w2v_model, svm = joblib.load(MODEL_PATH)
+def predict_spam(message: str):
+    tfidf, w2v, scaler, svm = joblib.load(MODEL_PATH)
 
-    tfidf_vec = tfidf.transform([message]).toarray()[0]
-    w2v_vec = w2v_embed(message, w2v_model)
+    clean = clean_text(message)
+    tfidf_vec = tfidf.transform([clean]).toarray()[0]
+    w2v_vec = w2v_embed(message, w2v)
 
     hybrid = np.concatenate([tfidf_vec, w2v_vec]).reshape(1, -1)
+    hybrid = scaler.transform(hybrid)
 
     pred = svm.predict(hybrid)[0]
-    prob = svm.predict_proba(hybrid)[0]
+    return "Spam" if pred == 1 else "Ham"
 
-    return ("Spam" if pred == 1 else "Ham"), prob[1], prob[0]
+
+if __name__ == "__main__":
+    # quick CLI test
+    while True:
+        msg = input("\nMessage (or 'quit'): ")
+        if msg.lower().strip() in ("quit", "exit"):
+            break
+        print("Prediction:", predict_spam(msg))
